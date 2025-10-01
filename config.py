@@ -3,6 +3,7 @@ config.py - Configuration settings for Customer Chatbot Service
 """
 import os
 from pydantic_settings import BaseSettings
+from pydantic import AnyUrl
 from typing import List
 
 
@@ -10,12 +11,14 @@ class Settings(BaseSettings):
     """Application settings"""
     
     # ==================== APPLICATION SETTINGS ====================
+    ENVIRONMENT: str = "development"
     APP_NAME: str = "Customer Chatbot API Service"
-    DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
+    DEBUG: bool = False
+    PORT: int = 8000
     
     # ==================== DATABASE SETTINGS ====================
-    MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-    MONGO_DB: str = os.getenv("MONGO_DB", "cscb")
+    MONGODB_URL: AnyUrl
+    MONGO_DB: str
     
     # MongoDB Collection Names
     CHATBOT_PLANS_COLLECTION: str = "chatbot_plans"
@@ -27,41 +30,36 @@ class Settings(BaseSettings):
     MONTHLY_USAGE_REPORTS_COLLECTION: str = "monthly_usage_reports"
     
     # ==================== REDIS SETTINGS ====================
-    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
-    REDIS_PORT: int = int(os.getenv("REDIS_PORT", 6379))
-    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", None)
-    REDIS_URL: str = os.getenv("REDIS_URL", None)
+    REDIS_HOST: str
+    REDIS_PORT: int
+    REDIS_PASSWORD: str
+    REDIS_URL: str
     
     # ==================== API KEYS ====================
-    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    HF_TOKEN: str = os.getenv("HF_TOKEN", "")
+    GROQ_API_KEY: str
+    HF_TOKEN: str
+    HUGGINGFACEHUB_API_TOKEN: str
+    # OPENAI_API_KEY: str = ""
     
     # ==================== STORAGE SETTINGS ====================
-    CUSTOMER_VECTORSTORE_DIR: str = os.getenv("CUSTOMER_VECTORSTORE_DIR", ".customer_vectorstores")
-    VECTOR_CACHE_DIR: str = os.getenv("VECTOR_CACHE_DIR", ".vector_cache")
+    CUSTOMER_VECTORSTORE_DIR: str = ".customer_vectorstores"
+    VECTOR_CACHE_DIR: str = ".vector_cache"
     
     # ==================== UPLOAD SETTINGS ====================
     MAX_UPLOAD_SIZE_MB: int = 50
+    MAX_IMAGE_SIZE_MB: int = 5
     ALLOWED_DOCUMENT_TYPES: List[str] = [
         "application/pdf",
         "text/plain",
         "text/markdown"
     ]
+    ALLOWED_IMAGE_TYPES: List[str] = ["image/jpeg", "image/png", "image/jpg"]
     
     # ==================== CORS SETTINGS ====================
-    ALLOWED_ORIGINS: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8000"
-    ]
-    
-    # Add production origins from environment
-    if os.getenv("ALLOWED_ORIGINS"):
-        ALLOWED_ORIGINS.extend(os.getenv("ALLOWED_ORIGINS").split(","))
+    ALLOWED_ORIGINS: List[str] = ["*"]
     
     # ==================== SECURITY SETTINGS ====================
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
@@ -70,17 +68,52 @@ class Settings(BaseSettings):
     
     # ==================== RATE LIMITING ====================
     DEFAULT_RATE_LIMIT_PER_MINUTE: int = 60
+    RATE_LIMIT: str = "100/minute"
     
     # ==================== MODEL SETTINGS ====================
-    USE_ML_VALIDATION: bool = False  # Set to True if you want image validation
+    USE_ML_VALIDATION: bool = False
     
+    # ==================== SUPPORT SETTINGS ====================
+    # SUPPORT_EMAIL: str = "fixibot038@gmail.com"
+    # SUPPORT_PHONE: str = "+1-800-123-4567"
+    # SUPPORT_HOURS: str = "Monday-Friday, 9AM-5PM EST"
+    
+    # Email Settings (if needed)
+    # MAIL_USERNAME: str = ""
+    # MAIL_PASSWORD: str = ""
+    # MAIL_FROM: str = ""
+    # MAIL_SERVER: str = ""
+    # MAIL_PORT: int = 587
+    # MAIL_STARTTLS: bool = True
+    # MAIL_SSL_TLS: bool = False
+    
+    # Cloudinary (if needed)
+    # CLOUDINARY_CLOUD_NAME: str = ""
+    # CLOUDINARY_API_KEY: str = ""
+    # CLOUDINARY_API_SECRET: str = ""
+    
+    # Google OAuth (if needed)
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
         case_sensitive = True
 
 
 # Create global settings instance
 settings = Settings()
+
+# Set environment variables for libraries that expect them
+# This happens automatically when config is imported
+import os
+os.environ["GROQ_API_KEY"] = settings.GROQ_API_KEY
+os.environ["HF_TOKEN"] = settings.HF_TOKEN
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = settings.HUGGINGFACEHUB_API_TOKEN
+
+# if settings.OPENAI_API_KEY:
+#     os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
 
 
 # Validate required settings
@@ -88,8 +121,10 @@ def validate_settings():
     """Validate that required settings are present"""
     required_settings = {
         "MONGODB_URL": settings.MONGODB_URL,
+        "MONGO_DB": settings.MONGO_DB,
         "GROQ_API_KEY": settings.GROQ_API_KEY,
         "HF_TOKEN": settings.HF_TOKEN,
+        "SECRET_KEY": settings.SECRET_KEY,
     }
     
     missing = [key for key, value in required_settings.items() if not value]
@@ -104,5 +139,10 @@ def validate_settings():
 # Run validation on import
 try:
     validate_settings()
+    print("✅ Configuration loaded successfully!")
+    print(f"   Environment: {settings.ENVIRONMENT}")
+    print(f"   Database: {settings.MONGO_DB}")
+    print(f"   GROQ API Key: {'✓ Set' if settings.GROQ_API_KEY else '✗ Missing'}")
+    print(f"   HF Token: {'✓ Set' if settings.HF_TOKEN else '✗ Missing'}")
 except ValueError as e:
     print(f"⚠️ Configuration Warning: {e}")

@@ -106,7 +106,9 @@ async def websocket_endpoint(
     websocket: WebSocket,
     api_key: str = Query(..., description="Customer API key"),
     session_token: Optional[str] = Query(None, description="Session token (optional)"),
-    end_user_id: Optional[str] = Query(None, description="End user identifier (optional)")
+    end_user_id: Optional[str] = Query(None, description="End user identifier (optional)"),
+    system_prompt: Optional[str] = Query(None, description="System prompt (optional)"),
+    temperature: Optional[float] = Query(None, description="Temperature (optional)")
 ):
     """
     WebSocket endpoint for real-time chatbot communication
@@ -199,7 +201,9 @@ async def websocket_endpoint(
                 response = await chatbot_engine.process_query(
                     customer_id=customer_id,
                     session=session,
-                    query=user_query
+                    query=user_query,
+                    system_prompt=system_prompt,
+                    temperature=temperature
                 )
                 
                 # Send response
@@ -298,7 +302,9 @@ async def http_chatbot_query(
     api_key: str = Query(...),
     session_token: Optional[str] = Query(None),
     query: str = Query(...),
-    end_user_id: Optional[str] = Query(None)
+    end_user_id: Optional[str] = Query(None),
+    system_prompt: Optional[str] = Query(None),
+    temperature: Optional[float] = Query(None)
 ):
     """
     HTTP endpoint for chatbot queries (alternative to WebSocket)
@@ -340,7 +346,9 @@ async def http_chatbot_query(
         response = await chatbot_engine.process_query(
             customer_id=customer_id,
             session=session,
-            query=query
+            query=query,
+            system_prompt=system_prompt,
+            temperature=temperature
         )
         
         # Update session

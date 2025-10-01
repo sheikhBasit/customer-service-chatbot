@@ -9,12 +9,14 @@ from fastapi.middleware.gzip import GZipMiddleware
 from typing import AsyncIterator
 import logging
 
-from routes import websocket_chatbot, customer_management
 from config import settings
 from database import connect_to_mongo, close_mongo_connection
+from route import customer_management,websocket_chatbot 
 from services.multimodal_embeddings import initialize_clip_model
 
 logger = logging.getLogger(__name__)
+
+
 
 
 @asynccontextmanager
@@ -88,14 +90,22 @@ async def ensure_indexes(db):
     }
     
     for collection_name, indexes in collections_indexes.items():
+        # Get collection using getattr and check if it's not None
         collection = getattr(db, f"{collection_name}_collection", None)
-        if collection:
+        if collection is not None:  # Fixed: use 'is not None' instead of truthy check
             for index_def in indexes:
-                if isinstance(index_def[0], list):
-                    await collection.create_index(index_def[0], **index_def[1])
-                else:
-                    await collection.create_index(index_def[0], **index_def[1])
-
+                try:
+                    if isinstance(index_def[0], list):
+                        await collection.create_index(index_def[0], **index_def[1])
+                    else:
+                        await collection.create_index(index_def[0], **index_def[1])
+                    logger.info(f"✓ Created index for {collection_name}: {index_def[0]}")
+                except OperationFailure as e:
+                    logger.warning(f"⚠️ Index may already exist for {collection_name}: {index_def[0]} - {e}")
+                except Exception as e:
+                    logger.error(f"❌ Error creating index for {collection_name}: {index_def[0]} - {e}")
+        else:
+            logger.warning(f"⚠️ Collection {collection_name} not found")
 
 async def schedule_cleanup_tasks():
     """Schedule periodic cleanup tasks"""
