@@ -1,2 +1,5 @@
 venv
 .env
+.customer_vectorstores/
+__pycache__/
+.serena/

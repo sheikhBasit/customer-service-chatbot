@@ -4,6 +4,7 @@ services/customer_vectorstore.py - Handle document processing for customers
 import hashlib
 import pickle
 import io
+from datetime import datetime
 import base64
 from pathlib import Path
 from typing import Tuple, Optional, List
@@ -93,7 +94,7 @@ class CustomerVectorStoreService:
                 all_docs.extend(docs)
                 all_embeddings.extend(embeddings)
                 image_data_store.update(images)
-            elif doc_meta["file_type"] in ["txt", "md"]:
+            elif doc_meta["file_type"] in ["txt", "md", "plain", "markdown"]:
                 docs, embeddings = await self._process_text_file(file_path, doc_meta)
                 all_docs.extend(docs)
                 all_embeddings.extend(embeddings)
@@ -226,7 +227,7 @@ class CustomerVectorStoreService:
     def _get_document_path(self, customer_id: str, document_id: ObjectId) -> Path:
         """Get file path for uploaded document"""
         customer_dir = self.cache_base_dir / str(customer_id) / "documents"
-        customer_dir.mkdir(exist_ok=True)
+        customer_dir.mkdir(parents=True, exist_ok=True)
         # Assume files are saved with their document ID
         return customer_dir / str(document_id)
     

@@ -24,6 +24,10 @@ def initialize_clip_model():
                 print(f"[CRITICAL] Failed to initialize CLIP model: {e}")
                 raise
 
+def _as_tensor(features):
+    """transformers>=5 returns an output object (projected embedding in pooler_output)."""
+    return features if hasattr(features, "norm") else features.pooler_output
+
 def embed_image(image_data):
     """Embed image using CLIP"""
     initialize_clip_model()  # Ensure model is loaded
@@ -37,7 +41,7 @@ def embed_image(image_data):
         inputs = clip_processor(images=image, return_tensors="pt")
         import torch
         with torch.no_grad():
-            features = clip_model.get_image_features(**inputs)
+            features = _as_tensor(clip_model.get_image_features(**inputs))
             features = features / features.norm(dim=-1, keepdim=True)
             result = features.squeeze().numpy()
             print(f"[DEBUG] Image embedding shape: {result.shape}")
@@ -60,7 +64,7 @@ def embed_text(text):
         )
         import torch
         with torch.no_grad():
-            features = clip_model.get_text_features(**inputs)
+            features = _as_tensor(clip_model.get_text_features(**inputs))
             features = features / features.norm(dim=-1, keepdim=True)
             result = features.squeeze().numpy()
             print(f"[DEBUG] Text embedding shape: {result.shape}")

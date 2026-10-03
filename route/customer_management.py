@@ -230,22 +230,12 @@ async def process_document_task(customer_id: str, document_id: str):
         # Update status to processing
         await db.customer_documents_collection.update_one(
             {"_id": ObjectId(document_id)},
-            {"$set": {"processing_status": "processing"}}
+            {"$set": {"processing_status": "completed", "processed": True}}
         )
         
-        # Process all documents for this customer (rebuild vectorstore)
+        # Process all documents for this customer (rebuild vectorstore); the
+        # builder only picks up completed docs, so mark this one first
         await vectorstore_service.process_customer_documents(customer_id, force_rebuild=True)
-        
-        # Update status to completed
-        await db.customer_documents_collection.update_one(
-            {"_id": ObjectId(document_id)},
-            {
-                "$set": {
-                    "processing_status": "completed",
-                    "processed": True
-                }
-            }
-        )
         
         logger.info(f"Document {document_id} processed successfully")
     
@@ -256,6 +246,7 @@ async def process_document_task(customer_id: str, document_id: str):
             {
                 "$set": {
                     "processing_status": "failed",
+                    "processed": False,
                     "error_message": str(e)
                 }
             }
