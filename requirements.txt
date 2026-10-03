@@ -14,7 +14,9 @@ certifi
 groq
 langchain-groq
 transformers
-# pip install torch==2.8.0+cpu --index-url https://download.pytorch.org/whl/cpu
+# CPU-only PyTorch (required by the CLIP embeddings at startup)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
 Pillow
 numpy
 
@@ -24,3 +26,8 @@ langchain==0.3.27
 langchain-core==0.3.76
 langchain-community==0.3.30
 faiss-cpu
+
+# Tests
+pytest
+pytest-asyncio
+httpx
