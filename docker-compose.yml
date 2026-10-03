@@ -1,22 +1,53 @@
-# docker-compose.yml
-version: '3.8'
 services:
   app:
     build: .
     ports:
       - "8000:8000"
-    env_file: .env.production
+    env_file: .env   # create it from .env.example (holds GROQ_API_KEY etc.)
+    environment:
+      # Point at the bundled containers (override whatever .env says)
+      MONGODB_URL: mongodb://mongo:27017
+      REDIS_URL: redis://redis:6379
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ""
+    volumes:
+      - vectorstores:/app/.customer_vectorstores   # per-customer RAG indexes
+      - hf_models:/models                          # CLIP model download cache
     depends_on:
-      - mongo
-      - redis
-  
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 60
+      start_period: 120s  # first start downloads the CLIP model (~600MB)
+
   mongo:
     image: mongo:6.0
+    ports:
+      - "27017:27017"
     volumes:
       - mongo_data:/data/db
-  
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   redis:
     image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
   mongo_data:
+  vectorstores:
+  hf_models:

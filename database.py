@@ -28,8 +28,8 @@ db = Database()
 
 async def connect_to_mongo():
     try:
-        # plain TCP for a local dev mongo, TLS for Atlas
-        tls_opts = {} if "localhost" in str(settings.MONGODB_URL) else dict(
+        # TLS only for Atlas (mongodb+srv://); plain TCP for local/docker mongo
+        tls_opts = dict() if not str(settings.MONGODB_URL).startswith("mongodb+srv://") else dict(
             tls=True,
             tlsCAFile=certifi.where(),
             tlsAllowInvalidCertificates=True,  # Changed to True to fix SSL issues
