@@ -169,6 +169,18 @@ class CustomerChatbotEngine:
 
         active_system_prompt = system_prompt or default_system_prompt
 
+        # Always search the knowledge base first, regardless of whether the LLM would call the tool
+        try:
+            kb = await execute_search_knowledge_base(customer_id=customer_id, query=query)
+            if kb.get("success") and kb.get("context"):
+                active_system_prompt += (
+                    "\n\nKnowledge base search results for the user's latest message "
+                    "(prefer these over general knowledge; if they are irrelevant, ignore them):\n"
+                    + kb["context"]
+                )
+        except Exception as kb_err:
+            logger.warning(f"[AgenticEngine] Pre-search of knowledge base failed: {kb_err}")
+
         # 2. Build Tools & Bind to LLM
         tools = self._build_agent_tools(customer_id, session)
         tool_map = {t.name: t for t in tools}
