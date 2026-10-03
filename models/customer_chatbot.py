@@ -193,3 +193,60 @@ class WebSocketMessage(BaseModel):
     session_token: str
     timestamp: datetime = Field(default_factory=datetime.now)
     metadata: Optional[Dict[str, Any]] = None
+
+
+# ==================== ORDER & TICKET MODELS (AGENTIC WORKFLOW) ====================
+
+class CustomerOrder(BaseModel):
+    """
+    Customer Order Model
+    Represents an order tracked by the customer service chatbot.
+    Used by the 'get_order_status' tool and Order Management APIs.
+    """
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    customer_id: PyObjectId  # Tenant / business account ID
+    order_id: str  # Unique business order reference (e.g. ORD-1001)
+    end_user_name: Optional[str] = "Valued Customer"
+    end_user_email: Optional[str] = None
+    status: Literal["pending", "processing", "shipped", "in_transit", "delivered", "cancelled", "returned"] = "processing"
+    items: List[Dict[str, Any]] = []  # List of items: [{name: "...", quantity: 1, price: 29.99}]
+    total_amount: float = 0.0
+    currency: str = "USD"
+    carrier: Optional[str] = "Standard Courier"  # e.g., FedEx, UPS, DHL
+    tracking_number: Optional[str] = None
+    shipping_address: Optional[str] = None
+    estimated_delivery: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    class Config:
+        arbitrary_types_allowed = True
+        json_encoders = {ObjectId: str}
+
+
+class SupportTicket(BaseModel):
+    """
+    Support Ticket Model
+    Represents a customer complaint, issue, or escalation recorded by the chatbot.
+    Used by the 'create_support_ticket' tool and Support Management APIs.
+    """
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    customer_id: PyObjectId  # Tenant / business account ID
+    ticket_id: str  # Human-readable reference e.g., TICK-948271
+    session_id: Optional[PyObjectId] = None  # Chat session link
+    end_user_id: Optional[str] = None
+    customer_name: Optional[str] = "Customer"
+    customer_email: str
+    subject: str
+    description: str
+    priority: Literal["low", "medium", "high", "urgent"] = "medium"
+    status: Literal["open", "in_progress", "resolved", "closed"] = "open"
+    related_order_id: Optional[str] = None
+    resolution_notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    class Config:
+        arbitrary_types_allowed = True
+        json_encoders = {ObjectId: str}

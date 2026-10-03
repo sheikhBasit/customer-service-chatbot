@@ -322,6 +322,7 @@ async def http_chatbot_query(
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
     
     # Get or create session
+    session = None
     if session_token:
         session = await db.customer_chat_sessions_collection.find_one({
             "session_token": session_token,

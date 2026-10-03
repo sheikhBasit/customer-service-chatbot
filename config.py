@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     CUSTOMER_CHAT_SESSIONS_COLLECTION: str = "customer_chat_sessions"
     USAGE_LOGS_COLLECTION: str = "usage_logs"
     MONTHLY_USAGE_REPORTS_COLLECTION: str = "monthly_usage_reports"
+    CUSTOMER_ORDERS_COLLECTION: str = "customer_orders"
+    CUSTOMER_SUPPORT_TICKETS_COLLECTION: str = "customer_support_tickets"
     
     # ==================== REDIS SETTINGS ====================
     REDIS_HOST: str

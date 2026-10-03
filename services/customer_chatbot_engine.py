@@ -1,47 +1,130 @@
-# services/customer_chatbot_engine.py
+"""
+services/customer_chatbot_engine.py - Agentic Chatbot Engine with Tool Calling
+Transforms the chatbot from a static RAG chain into an autonomous Agentic Workflow.
 
+Features:
+1. Tool Calling (Function Calling) powered by Groq LLaMA-3.1 / 3.3
+2. Built-in Tools:
+   - get_order_status: Live courier tracking, status, and items breakdown
+   - create_support_ticket: Support ticket generation and issue escalation
+   - search_knowledge_base: Tenant multimodal RAG document search
+3. Multi-turn Agent Reasoning Loop with full debugging logs and console outputs
+4. Session-aware history preservation and conversation context
+"""
+
+import json
 import logging
 from typing import Optional, List, Dict, Any
 
-from langchain_core.runnables import RunnableLambda, Runnable
-from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_core.prompts.chat import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
-from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_core.runnables   .config import RunnableConfig  # config for invoke
-from langchain_core.callbacks import AsyncCallbackHandler
+from langchain_core.messages import (
+    BaseMessage,
+    HumanMessage,
+    AIMessage,
+    SystemMessage,
+    ToolMessage
+)
+from langchain_core.tools import tool
+from langchain_groq import ChatGroq
 
-# Import your existing modules
 from models.customer_chatbot import CustomerChatSession
-from services.customer_vectorstore import CustomerVectorStoreService
-from services.multimodal_embeddings import embed_text
+from services.agent_tools import (
+    execute_get_order_status,
+    execute_create_support_ticket,
+    execute_search_knowledge_base
+)
 from config import settings
 
-# Import the LLM interface for Groq
-from langchain_groq import ChatGroq  
-
-logger = logging.getLogger(__name__)
+# Setup high-visibility logger
+logger = logging.getLogger("agentic_engine")
+logger.setLevel(logging.DEBUG)
 
 
 class CustomerChatbotEngine:
-    """Process queries using customer's vectorstore, in LangChain v0.3 style"""
+    """
+    Autonomous Customer Service Agent Engine
+    Uses Groq's fast inference with native tool-calling capabilities to resolve
+    customer queries, track orders, look up documentation, and file support tickets.
+    """
 
     def __init__(self):
-        self.vectorstore_service = CustomerVectorStoreService()
-        # Initialize ChatGroq as a Runnable Chat model
-        # You can pass temperature, max_tokens, etc. here or override at invoke time
-        self.llm: Runnable = ChatGroq(
-            model="llama-3.1-70b-versatile",
-            temperature=0.5,
+        logger.info("🤖 Initializing Agentic CustomerChatbotEngine with Groq LLaMA-3.1...")
+        print("\n🚀 [AGENT INITIALIZATION] CustomerChatbotEngine loaded with Tool-Calling capabilities.")
+        
+        # Initialize Groq LLM with function calling support
+        # llama-3.1-70b-versatile or llama-3.3-70b-versatile provides state-of-the-art tool calling
+        self.llm = ChatGroq(
+            model="openai/gpt-oss-120b",
+            temperature=0.3,  # Lower temperature for accurate tool arguments
             max_tokens=1024,
         )
 
-        # (Optional) If you want to use RunnableWithMessageHistory to handle history automatically:
-        # You need a function get_history(session_id) -> BaseChatMessageHistory
-        self.get_history_fn = None  # override externally if desired
+    def _build_agent_tools(self, customer_id: str, session: CustomerChatSession):
+        """
+        Dynamically constructs LangChain tools bound to the current customer/tenant context.
+        """
 
-        # (Optional) Wrap the LLM with history handling
-        # We'll conditionally wrap later in `process_query`.
+        @tool
+        async def get_order_status(order_id: str) -> str:
+            """
+            Look up real-time delivery status, shipping courier, tracking number, and line items for an order.
+            Call this whenever a user asks 'Where is my order?', provides an order number (e.g. 'ORD-1002'),
+            or inquires about package delivery.
+            
+            Args:
+                order_id: The order identifier, e.g., 'ORD-1001', 'ORD-1002'.
+            """
+            print(f"🔧 [TOOL INVOKED] get_order_status for order_id='{order_id}'")
+            res = await execute_get_order_status(order_id=order_id, customer_id=customer_id)
+            return json.dumps(res)
+
+        @tool
+        async def create_support_ticket(
+            customer_email: str,
+            subject: str,
+            description: str,
+            priority: str = "medium",
+            related_order_id: Optional[str] = None
+        ) -> str:
+            """
+            Create an official customer support ticket and escalate the issue to the human support team.
+            Call this when a customer has an unresolved issue, broken/damaged products, refund disputes,
+            or explicitly requests to file a complaint or speak to a support representative.
+            
+            Args:
+                customer_email: The customer's email address to receive updates and ticket notifications.
+                subject: A brief, clear title for the ticket (e.g., 'Damaged headphone during delivery').
+                description: Detailed description of the problem or customer complaint.
+                priority: Urgency level ('low', 'medium', 'high', 'urgent').
+                related_order_id: Order number if applicable (e.g. 'ORD-1002').
+            """
+            print(f"🔧 [TOOL INVOKED] create_support_ticket for email='{customer_email}', subject='{subject}'")
+            res = await execute_create_support_ticket(
+                customer_email=customer_email,
+                subject=subject,
+                description=description,
+                customer_id=customer_id,
+                customer_name=session.end_user_name,
+                priority=priority,
+                related_order_id=related_order_id,
+                session_id=str(session.id) if session.id else None
+            )
+            return json.dumps(res)
+
+        @tool
+        async def search_company_knowledge_base(search_query: str) -> str:
+            """
+            Search company documents, FAQs, return policies, warranty guides, and product manuals.
+            Call this to answer customer questions about return policy windows, warranty terms,
+            troubleshooting steps, or company-specific documentation.
+            
+            Args:
+                search_query: Keywords or question to look up in the company vector knowledge base.
+            """
+            print(f"🔧 [TOOL INVOKED] search_company_knowledge_base with query='{search_query}'")
+            res = await execute_search_knowledge_base(customer_id=customer_id, query=search_query)
+            return json.dumps(res)
+
+        return [get_order_status, create_support_ticket, search_company_knowledge_base]
 
     async def process_query(
         self,
@@ -52,122 +135,129 @@ class CustomerChatbotEngine:
         temperature: Optional[float] = None,
     ) -> str:
         """
-        Process a query using RAG on customer's documents, using LangChain v0.3 runnables.
+        Execute an agentic problem-solving loop:
+        1. Formulates agent prompt with conversational history & available tools.
+        2. LLM reasons: decides whether to answer directly or call external tools.
+        3. If tools are requested: executes them, logs outputs, and feeds observations back to LLM.
+        4. Synthesizes a natural, helpful final response for the user.
         """
-        logger.debug(f"[process_query] customer_id={customer_id}, query={query}")
+        print("\n" + "#" * 70)
+        print(f"🤖 [AGENT REASONING START] Incoming User Query")
+        print(f"    👤 Session ID   : {session.session_token}")
+        print(f"    🏢 Customer ID  : {customer_id}")
+        print(f"    💬 User Query   : \"{query}\"")
+        print("#" * 70)
+        
+        logger.info(f"[AgenticEngine] Processing query for customer={customer_id}, session={session.session_token}")
 
-        # Fetch or initialize vectorstore for this customer
-        vectorstore_data = await self.vectorstore_service.get_customer_vectorstore(customer_id)
-        if not vectorstore_data:
-            logger.debug("[process_query] No vectorstore found for customer, returning fallback")
-            return "I don't have any documents to reference yet. Please upload documents first."
-        vectorstore, image_data_store = vectorstore_data
+        # 1. Define comprehensive Agent System Prompt
+        default_system_prompt = (
+            "You are an expert, proactive, and empathetic Customer Support AI Agent.\n\n"
+            "Your Capabilities & Tools:\n"
+            "1. 'get_order_status': Look up tracking, shipping carrier, delivery status, and items for any order number.\n"
+            "2. 'create_support_ticket': Create an official support ticket for refunds, damages, complaints, or human escalation.\n"
+            "3. 'search_company_knowledge_base': Search company policies, FAQs, warranty information, and documents.\n\n"
+            "Operating Guidelines:\n"
+            "- Always use tools when relevant. Do NOT guess order statuses or fake ticket reference numbers.\n"
+            "- If a customer asks about an order (e.g. 'Where is ORD-1002?'), IMMEDIATELY call 'get_order_status'.\n"
+            "- If a customer reports a damaged item, requests a refund, or is frustrated, offer to create a support ticket.\n"
+            "  Always make sure you have or ask for their email address before or while creating the ticket.\n"
+            "- If asked about company policies, return windows, or product manuals, call 'search_company_knowledge_base'.\n"
+            "- Maintain a warm, courteous, professional, and solution-oriented tone at all times.\n"
+            "- Keep answers concise, clear, and easy to read with bullet points when sharing details."
+        )
 
-        # Build a runnable for retrieval: embed -> search
-        embed_runnable = RunnableLambda(lambda text: embed_text(text))
-        search_runnable = RunnableLambda(lambda emb: vectorstore.similarity_search_by_vector(emb, k=5))
+        active_system_prompt = system_prompt or default_system_prompt
 
-        # Optionally you might want async versions, but for simplicity we use sync runnables here
-
-        # Debug: show chaining
-        logger.debug("[process_query] chaining embed and search runnables")
-        retrieval_pipeline = embed_runnable | search_runnable
-
-        # Run the pipeline to get docs (this is sync; if you have `await` variants, you can use ainvoke)
-        docs = retrieval_pipeline.invoke(query)
-        logger.debug(f"[process_query] Retrieved {len(docs)} docs")
-
-        # Format context
-        context_parts: List[str] = []
-        for doc in docs:
-            if doc.metadata.get("type") == "text":
-                context_parts.append(doc.page_content)
-            elif doc.metadata.get("type") == "image":
-                context_parts.append(f"[Referenced image: {doc.metadata.get('filename')}]")
-        context = "\n---\n".join(context_parts)
-        logger.debug(f"[process_query] Context snippet: {context[:200]}")
-
-        # Prepare prompts / messages for LLM
-        if system_prompt is None:
-            system_prompt = (
-                "You are a helpful AI assistant that answers questions based "
-                "on the provided context from documents.\n\n"
-                "Instructions:\n"
-                "- Answer questions accurately using ONLY the information from the context\n"
-                "- If the context doesn't contain relevant information, politely say so\n"
-                "- Be conversational and friendly\n"
-                "- Keep answers concise but complete\n"
-                "- Reference specific details from the context when relevant\n"
-                "- If asked about something not in the context, acknowledge the limitation"
-            )
-
+        # 2. Build Tools & Bind to LLM
+        tools = self._build_agent_tools(customer_id, session)
+        tool_map = {t.name: t for t in tools}
+        
+        llm_with_tools = self.llm.bind_tools(tools)
         if temperature is not None:
-            # override the model's default if provided
-            # The ChatGroq Runnable supports passing override args via invoke config kwargs
-            llm = self.llm.with_retry()  # just to illustrate you can wrap or adjust
-            # or you could use `self.llm.configure(temperature=temperature)` if available
-        else:
-            llm = self.llm
+            llm_with_tools = self.llm.with_config(temperature=temperature).bind_tools(tools)
 
-        # Build a ChatPromptTemplate to structure message sequence
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            MessagesPlaceholder(variable_name="history"),
-            ("human", "{user_query}"),
-        ])
+        # 3. Assemble Conversation History
+        messages: List[BaseMessage] = [SystemMessage(content=active_system_prompt)]
+        
+        # Load up to the last 10 messages from session history for conversational context
+        recent_messages = session.messages[-10:] if session.messages else []
+        for msg in recent_messages:
+            role = msg.get("role")
+            content = msg.get("content", "")
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                messages.append(AIMessage(content=content))
 
-        # Chain prompt + LLM
-        prompt_and_llm: Runnable = prompt | llm
+        # Append current user query
+        messages.append(HumanMessage(content=query))
 
-        # Optionally wrap with message history
-        if self.get_history_fn:
-            # Wrap so that prompt+LLM will manage history under a session id
-            prompt_and_llm = RunnableWithMessageHistory(
-                prompt_and_llm,
-                get_session_history=self.get_history_fn,
-                input_messages_key="user_query",
-            )
+        # 4. Agent Execution Loop (Max 5 turns to prevent infinite loops)
+        max_iterations = 5
+        iteration = 0
 
-        # Prepare input dict
-        inputs: Dict[str, Any] = {"user_query": query}
-        # Also include context in user_query or embed it into prompt
-        # You might alternatively pass context via a tool or extra variable
-        # Here we embed the context directly in the user query
-        inputs["user_query"] = f"Context from documents:\n{context}\n\nQuestion: {query}"
+        while iteration < max_iterations:
+            iteration += 1
+            print(f"\n🧠 [AGENT LOOP] Iteration {iteration}/{max_iterations} - Prompting LLM...")
+            logger.debug(f"[AgenticEngine] Loop {iteration}: Prompting LLM with {len(messages)} messages")
 
-        # Prepare config for invoke
-        invoke_config = RunnableConfig()
-        # If using RunnableWithMessageHistory, we must pass session_id
-        if self.get_history_fn:
-            invoke_config = RunnableConfig(
-                configurable={"session_id": session.session_id}
-            )
+            try:
+                # Invoke LLM
+                ai_message: AIMessage = await llm_with_tools.ainvoke(messages)
+                messages.append(ai_message)
 
-        logger.debug(f"[process_query] invoking prompt_and_llm with inputs={inputs}, config={invoke_config}")
-        # Use ainvoke (async) or invoke
-        ai_msg: Any
-        if hasattr(prompt_and_llm, "ainvoke"):
-            ai_msg = await prompt_and_llm.ainvoke(inputs, config=invoke_config)
-        else:
-            ai_msg = prompt_and_llm.invoke(inputs, config=invoke_config)
+                # Check if the LLM decided to call any tools
+                if not ai_message.tool_calls:
+                    print(f"✨ [AGENT FINAL ANSWER REACHED] No further tool calls requested.")
+                    print(f"    💬 Response Snippet: \"{ai_message.content[:150]}...\"")
+                    print("#" * 70 + "\n")
+                    return str(ai_message.content)
 
-        # The output `ai_msg` is expected to be a `BaseMessage` or dict containing `messages`
-        response: str
-        if isinstance(ai_msg, BaseMessage):
-            response = ai_msg.content
-        elif isinstance(ai_msg, dict) and "messages" in ai_msg:
-            # If a list of messages returned, pick last AI message
-            msgs = ai_msg["messages"]
-            for m in reversed(msgs):
-                if isinstance(m, AIMessage):
-                    response = m.content
-                    break
-            else:
-                # fallback
-                response = msgs[-1].content
-        else:
-            # fallback: try str
-            response = str(ai_msg)
+                # Execute requested tools
+                print(f"⚙️  [AGENT ACTION] LLM requested {len(ai_message.tool_calls)} tool call(s)")
+                
+                for tool_call in ai_message.tool_calls:
+                    tool_name = tool_call["name"]
+                    tool_args = tool_call["args"]
+                    tool_call_id = tool_call["id"]
 
-        logger.debug(f"[process_query] Final response: {response[:200]}")
-        return response
+                    print(f"\n▶️  [EXECUTING TOOL] '{tool_name}'")
+                    print(f"    📥 Arguments: {json.dumps(tool_args, indent=2)}")
+                    logger.info(f"[AgenticEngine] Executing tool '{tool_name}' with args {tool_args}")
+
+                    selected_tool = tool_map.get(tool_name)
+                    if selected_tool:
+                        try:
+                            # Run tool (async)
+                            tool_output = await selected_tool.ainvoke(tool_args)
+                            print(f"    📤 Tool Raw Output: {str(tool_output)[:200]}...")
+                        except Exception as tool_err:
+                            logger.error(f"[AgenticEngine] Tool execution error for '{tool_name}': {tool_err}", exc_info=True)
+                            tool_output = json.dumps({
+                                "error": True,
+                                "message": f"Error running tool '{tool_name}': {str(tool_err)}"
+                            })
+                            print(f"    ❌ Tool Error: {tool_err}")
+                    else:
+                        tool_output = json.dumps({"error": True, "message": f"Tool '{tool_name}' is not recognized."})
+                        print(f"    ❌ Tool not found in registry: {tool_name}")
+
+                    # Append Tool observation back to conversation history
+                    messages.append(ToolMessage(
+                        content=str(tool_output),
+                        tool_call_id=tool_call_id
+                    ))
+
+            except Exception as e:
+                logger.error(f"[AgenticEngine] Error during agent loop turn {iteration}: {e}", exc_info=True)
+                print(f"❌ [AGENT RUNTIME ERROR] {e}")
+                return (
+                    "I encountered an unexpected issue while processing your request. "
+                    "If you need immediate assistance, please let me know your email address "
+                    "so I can create a support ticket for you."
+                )
+
+        # Fallback if max iterations exceeded
+        print("⚠️ [AGENT WARNING] Max iterations reached without conclusive stop.")
+        return "I completed the necessary checks. Please let me know if you would like me to assist you with anything else!"

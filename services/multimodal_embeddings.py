@@ -1,4 +1,3 @@
-import torch
 from PIL import Image
 import numpy as np
 import threading
@@ -36,6 +35,7 @@ def embed_image(image_data):
             image = image_data
 
         inputs = clip_processor(images=image, return_tensors="pt")
+        import torch
         with torch.no_grad():
             features = clip_model.get_image_features(**inputs)
             features = features / features.norm(dim=-1, keepdim=True)
@@ -58,6 +58,7 @@ def embed_text(text):
             truncation=True,
             max_length=77
         )
+        import torch
         with torch.no_grad():
             features = clip_model.get_text_features(**inputs)
             features = features / features.norm(dim=-1, keepdim=True)

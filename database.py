@@ -21,16 +21,22 @@ class Database:
     customer_chat_sessions_collection = None
     usage_logs_collection = None
     monthly_usage_reports_collection = None
+    customer_orders_collection = None
+    customer_support_tickets_collection = None
 
 db = Database()
 
 async def connect_to_mongo():
     try:
-        db.client = AsyncIOMotorClient(
-            str(settings.MONGODB_URL),
+        # plain TCP for a local dev mongo, TLS for Atlas
+        tls_opts = {} if "localhost" in str(settings.MONGODB_URL) else dict(
             tls=True,
             tlsCAFile=certifi.where(),
             tlsAllowInvalidCertificates=True,  # Changed to True to fix SSL issues
+        )
+        db.client = AsyncIOMotorClient(
+            str(settings.MONGODB_URL),
+            **tls_opts,
             retryWrites=True,
             w="majority",
             appName="CustomerChatbot",
@@ -51,6 +57,8 @@ async def connect_to_mongo():
         db.customer_chat_sessions_collection = db.db[settings.CUSTOMER_CHAT_SESSIONS_COLLECTION]
         db.usage_logs_collection = db.db[settings.USAGE_LOGS_COLLECTION]
         db.monthly_usage_reports_collection = db.db[settings.MONTHLY_USAGE_REPORTS_COLLECTION]
+        db.customer_orders_collection = db.db[settings.CUSTOMER_ORDERS_COLLECTION]
+        db.customer_support_tickets_collection = db.db[settings.CUSTOMER_SUPPORT_TICKETS_COLLECTION]
 
         # Create indexes with error handling for existing indexes
         try:
@@ -88,6 +96,22 @@ async def connect_to_mongo():
                 [("customer_id", 1), ("month_year", 1)], 
                 unique=True
             )
+            
+            # Customer Orders Indexes
+            await db.customer_orders_collection.create_index(
+                [("customer_id", 1), ("order_id", 1)],
+                unique=True
+            )
+            await db.customer_orders_collection.create_index("order_id")
+            await db.customer_orders_collection.create_index("end_user_email")
+            await db.customer_orders_collection.create_index("status")
+            
+            # Support Tickets Indexes
+            await db.customer_support_tickets_collection.create_index("ticket_id", unique=True)
+            await db.customer_support_tickets_collection.create_index("customer_id")
+            await db.customer_support_tickets_collection.create_index("customer_email")
+            await db.customer_support_tickets_collection.create_index("status")
+            await db.customer_support_tickets_collection.create_index("priority")
             
             logger.info("MongoDB indexes created successfully.")
         except OperationFailure as e:

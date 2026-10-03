@@ -11,7 +11,7 @@ import logging
 
 from config import settings
 from database import connect_to_mongo, close_mongo_connection
-from route import customer_management,websocket_chatbot 
+from route import customer_management, websocket_chatbot, orders_and_tickets 
 from services.multimodal_embeddings import initialize_clip_model
 
 logger = logging.getLogger(__name__)
@@ -86,6 +86,19 @@ async def ensure_indexes(db):
         "usage_logs": [
             ([("customer_id", 1), ("month_year", 1)], {}),
             ("timestamp", {})
+        ],
+        "customer_orders": [
+            ([("customer_id", 1), ("order_id", 1)], {"unique": True}),
+            ("order_id", {}),
+            ("end_user_email", {}),
+            ("status", {})
+        ],
+        "customer_support_tickets": [
+            ("ticket_id", {"unique": True}),
+            ("customer_id", {}),
+            ("customer_email", {}),
+            ("status", {}),
+            ("priority", {})
         ]
     }
     
@@ -152,6 +165,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Include routers
 app.include_router(websocket_chatbot.router)
 app.include_router(customer_management.router)
+app.include_router(orders_and_tickets.router)
 
 
 @app.get("/")
